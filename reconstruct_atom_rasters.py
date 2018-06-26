@@ -32,13 +32,14 @@ def reconstruct_raster_stage(static_polygon_features,
                              time_from,
                              time_to,
                              uniform_recon_points, 
-                             spatial_tree_of_uniform_recon_points):
+                             spatial_tree_of_uniform_recon_points,
+                             anchor_plate_id=0):
     
     print 'Reconstruct static polygons...'
     
     # Reconstruct the multipoint feature.
     recon_static_polygon_features = []
-    pygplates.reconstruct(static_polygon_features, rotation_model, recon_static_polygon_features, time_to)
+    pygplates.reconstruct(static_polygon_features, rotation_model, recon_static_polygon_features, time_to, anchor_plate_id=anchor_plate_id)
     
     # Extract the polygons and plate IDs from the reconstructed static polygons.
     recon_static_polygons = []
@@ -96,11 +97,11 @@ def reconstruct_raster_stage(static_polygon_features,
         multipoint_feature.set_reconstruction_plate_id(plate_id)
         
         # Reverse reconstruct the multipoint feature.
-        pygplates.reverse_reconstruct(multipoint_feature, rotation_model, time_to)
+        pygplates.reverse_reconstruct(multipoint_feature, rotation_model, time_to, anchor_plate_id=anchor_plate_id)
 
         #Forward reconstruct multipoint to 
         multipoint_at_from_time = []
-        pygplates.reconstruct(multipoint_feature,rotation_model,multipoint_at_from_time,time_from)
+        pygplates.reconstruct(multipoint_feature,rotation_model,multipoint_at_from_time,time_from, anchor_plate_id=anchor_plate_id)
         
         # Extract reverse-reconstructed geometry.
         multipoint = multipoint_at_from_time[0].get_reconstructed_geometry()
@@ -128,10 +129,10 @@ def reconstruct_raster_stage(static_polygon_features,
     return recon_point_lons,recon_point_lats,point_lons,point_lats
 
 
-def run_grid_pip(recon_time, points, polygons, rotation_model):
+def run_grid_pip(recon_time, points, polygons, rotation_model, anchor_plate_id=0):
 
     reconstructed_polygons = []
-    pygplates.reconstruct(polygons, rotation_model, reconstructed_polygons, recon_time)
+    pygplates.reconstruct(polygons, rotation_model, reconstructed_polygons, recon_time, anchor_plate_id=anchor_plate_id)
     rpolygons = []
     for polygon in reconstructed_polygons:
         if polygon.get_reconstructed_geometry():
@@ -150,10 +151,11 @@ def run_grid_pip(recon_time, points, polygons, rotation_model):
     return zval
 
 
-def run_grid_pnp(recon_time, points, spatial_tree_of_uniform_recon_points, polygons, rotation_model, distance_threshold_radians=2):
+def run_grid_pnp(recon_time, points, spatial_tree_of_uniform_recon_points, polygons, rotation_model, 
+                 anchor_plate_id=0, distance_threshold_radians=2):
 
     reconstructed_polygons = []
-    pygplates.reconstruct(polygons, rotation_model, reconstructed_polygons, recon_time)
+    pygplates.reconstruct(polygons, rotation_model, reconstructed_polygons, recon_time, anchor_plate_id=anchor_plate_id)
     rpolygons = []
     for polygon in reconstructed_polygons:
         if polygon.get_reconstructed_geometry():
@@ -175,4 +177,30 @@ def run_grid_pnp(recon_time, points, spatial_tree_of_uniform_recon_points, polyg
 
 
 ###########################################################
+
+
+def reconstruct_raster(raster_class, static_polygons, rotation_model, time_from, time_to, grid_sampling=1., anchor_plate_id=0):
+
+    grid_longitudes, grid_latitudes = np.meshgrid(np.arange(-180.,180.0001,grid_sampling), np.arange(-90.,90.0001,grid_sampling)) 
+    grid_longitudes = grid_longitudes.flatten()
+    grid_latitudes = grid_latitudes.flatten()
+
+    points = [pygplates.PointOnSphere(point) for point in zip(grid_latitudes, grid_longitudes)]
+
+    spatial_tree_of_uniform_recon_points = points_spatial_tree.PointsSpatialTree(points)
+
+    (time_to_point_lons,
+     time_to_point_lats,
+     time_from_point_lons,
+     time_from_point_lats) = reconstruct_raster_stage(static_polygons,
+                                                      rotation_model,
+                                                      time_from,
+                                                      time_to,
+                                                      points,
+                                                      spatial_tree_of_uniform_recon_points,
+                                                      anchor_plate_id)
+
+    point_raster_values = raster_class.sample(time_from_point_lons, time_from_point_lats)
+
+    return time_to_point_lons, time_to_point_lats, point_raster_values
 
